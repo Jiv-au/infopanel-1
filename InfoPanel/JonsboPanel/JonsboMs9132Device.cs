@@ -63,7 +63,7 @@ namespace InfoPanel.JonsboPanel
             [0xA6, 0x05, 0x00, 0, 0, 0, 0, 0],      // video off
             [0xB5, 0xC5, 0x55, 0, 0, 0, 0, 0],
             [0xB5, 0xF0, 0x05, 0, 0, 0, 0, 0],
-            [0xB6, 0xF0, 0x05, 0x20, 0, 0, 0, 0],   // display control register, output still off
+            [0xB6, 0xF0, 0x05, 0x40, 0, 0, 0, 0],   // display control register, output still off
             [0xC5, 0xB0, 0x00, 0, 0, 0, 0, 0],
             [0xC6, 0xB0, 0xDF, 0, 0, 0, 0, 0],
             [0xC5, 0xA0, 0x00, 0, 0, 0, 0, 0],
@@ -71,7 +71,7 @@ namespace InfoPanel.JonsboPanel
             [0xC5, 0xA0, 0x00, 0, 0, 0, 0, 0],
             [0xC6, 0xA0, 0xF0, 0, 0, 0, 0, 0],
             [0xB5, 0xF0, 0x16, 0, 0, 0, 0, 0],
-            [0xB6, 0xF0, 0x16, 0x00, 0, 0, 0, 0],
+            [0xB6, 0xF0, 0x16, 0x08, 0, 0, 0, 0],
             [0xB5, 0x00, 0x32, 0, 0, 0, 0, 0],      // panel status
             .. Enumerable.Range(0, 32).Select(i => new byte[] { 0xB5, 0xC0, (byte)(i * 4), 0, 0, 0, 0, 0 }),
         ];
@@ -80,7 +80,7 @@ namespace InfoPanel.JonsboPanel
         private static readonly byte[][] EnableVideoReports =
         [
             [0xB5, 0xF0, 0x05, 0, 0, 0, 0, 0],
-            [0xB6, 0xF0, 0x05, 0x30, 0, 0, 0, 0],   // display control, output bit set
+            [0xB6, 0xF0, 0x05, 0x50, 0, 0, 0, 0],   // display control, output bit set
             [0xA6, 0x05, 0x01, 0, 0, 0, 0, 0],      // video on
             [0xB5, 0xC5, 0x55, 0, 0, 0, 0, 0],
         ];
@@ -278,6 +278,14 @@ namespace InfoPanel.JonsboPanel
             Array.Copy(payload8, 0, buffer, 1, Math.Min(payload8.Length, 8));
             _hidStream.SetFeature(buffer);
 
+            // The OEM app only follows read opcodes (B5/F5/C5) with a GET_REPORT; write
+            // opcodes (A6/B6/C6) are sent with no read-back.
+            if (payload8[0] is 0xA6 or 0xB6 or 0xC6)
+            {
+                ApplyCommandDelay(payload8);
+                return new byte[5];
+            }
+
             var reply = new byte[9];
             _hidStream.GetFeature(reply);
 
@@ -414,6 +422,9 @@ namespace InfoPanel.JonsboPanel
                     }
                     offset += len;
                 }
+
+                // The OEM app follows every frame with an empty bulk OUT (zero-length packet).
+                _writer.Write(Array.Empty<byte>(), 0, 0, 1000, out _);
             }
             finally
             {

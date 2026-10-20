@@ -378,6 +378,7 @@ namespace InfoPanel.Services
             var stopwatch = new Stopwatch();
             byte[]? bgrBuffer = null;
             int framesSent = 0;
+            var pollStopwatch = Stopwatch.StartNew();
 
             while (!token.IsCancellationRequested)
             {
@@ -390,7 +391,12 @@ namespace InfoPanel.Services
                 // The OEM app turns the output on only after the first frames are on the
                 // wire, then polls the panel status once per frame. Enabling video earlier
                 // leaves the scaler refusing to drain the bulk pipe on some units (#166).
-                ms.PollPanelStatus();
+                // The OEM app polls the panel status about every 500 ms, not every frame.
+                if (pollStopwatch.ElapsedMilliseconds >= 500)
+                {
+                    ms.PollPanelStatus();
+                    pollStopwatch.Restart();
+                }
                 if (framesSent == 2) ms.EnableVideo();
 
                 fpsCounter.Update(stopwatch.ElapsedMilliseconds);
@@ -452,9 +458,11 @@ namespace InfoPanel.Services
                                     b = (byte)(b * scale);
                                 }
                                 // Wire format is BGR888 (DRM_FORMAT_RGB888 memory order)
-                                *dst++ = b;
-                                *dst++ = g;
-                                *dst++ = r;
+                                // 0xFF is the MS9132 frame header/trailer marker. An 0xFF pixel
+                                // byte makes the chip stall or flicker, so clamp to 0xFE.
+                                *dst++ = b == 0xFF ? (byte)0xFE : b;
+                                *dst++ = g == 0xFF ? (byte)0xFE : g;
+                                *dst++ = r == 0xFF ? (byte)0xFE : r;
                             }
                         }
                     }
